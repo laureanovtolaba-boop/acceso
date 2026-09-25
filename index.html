@@ -4,15 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Acceso - Escáner DNI</title>
-    
-    <!-- CORREGIDO: Ahora descarga el motor completo y correcto de ZXing -->
+    <!-- Cargamos la librería ZXing -->
     <script src="https://unpkg.com"></script>
-    
     <style>
         body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background-color: #f4f4f9; }
-        #contenedor-camara { width: 100%; max-width: 500px; margin: auto; position: relative; border: 3px solid #ccc; border-radius: 8px; overflow: hidden; }
+        #contenedor-camara { width: 100%; max-width: 500px; margin: auto; position: relative; border: 3px solid #ccc; border-radius: 8px; overflow: hidden; background-color: #000; }
         video { width: 100%; height: auto; display: block; }
-        .guia-escaneo { position: absolute; top: 25%; left: 5%; width: 90%; height: 50%; border: 3px dashed #007bff; box-sizing: border-box; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5); }
+        .guia-escaneo { position: absolute; top: 25%; left: 5%; width: 90%; height: 50%; border: 3px dashed #007bff; box-sizing: border-box; pointer-events: none; }
         #resultado { margin-top: 20px; padding: 15px; font-size: 1.2rem; font-weight: bold; border-radius: 5px; display: none; }
         .autorizado { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .denegado { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
@@ -24,62 +22,74 @@
     <p>Coloque el código de barras del DNI horizontalmente dentro del recuadro azul.</p>
 
     <div id="contenedor-camara">
-        <video id="video-camara"></video>
+        <video id="video-camara" autoplay playsinline muted></video>
         <div class="guia-escaneo"></div>
     </div>
 
     <div id="resultado"></div>
 
     <script>
-        // REEMPLAZA ESTO CON TU LINK DE GOOGLE SHEETS (El que termina en /exec)
+        // REEMPLAZA ESTO CON TU LINK DE GOOGLE APPS SCRIPT (El que termina en /exec)
         const URL_SCRIPT_GOOGLE = "TU_URL_DE_APPS_SCRIPT_AQUI"; 
         
         const videoElement = document.getElementById('video-camara');
         const resultadoDiv = document.getElementById('resultado');
         let escaneando = true;
         
-        // OPTIMIZADO: Cambiado a MultiFormatReader para soporte nativo real de PDF417
+        // Inicializamos el lector multiformato
         const codeReader = new ZXing.BrowserMultiFormatReader();
 
-        // Encender la cámara trasera con alta resolución para distinguir las líneas finas del DNI
-        navigator.mediaDevices.getUserMedia({ 
-            video: { 
-                facingMode: "environment",
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            } 
-        })
-        .then((stream) => {
-            videoElement.srcObject = stream;
-            videoElement.setAttribute("playsinline", true);
-            videoElement.play();
-            escanearFramerates();
-        })
-        .catch(err => {
-            console.error("Error al acceder a la cámara: ", err);
-            alert("No se pudo iniciar la cámara. Asegúrate de dar los permisos y de ingresar usando HTTPS.");
-        });
+        // NUEVA LÓGICA: Buscar las cámaras y forzar el uso de la trasera (back/environment)
+        codeReader.listVideoInputDevices()
+            .then((videoInputDevices) => {
+                if (videoInputDevices.length > 0) {
+                    // Intentamos buscar un dispositivo que en su nombre diga 'back' o 'trasera' o 'environment'
+                    let selectedDeviceId = videoInputDevices[0].deviceId; // Por defecto la primera
+                    
+                    const trasera = videoInputDevices.find(device => 
+                        device.label.toLowerCase().includes('back') || 
+                        device.label.toLowerCase().includes('trasera') ||
+                        device.label.toLowerCase().includes('environment')
+                    );
+                    
+                    // Si encontramos una cámara que explícitamente es la trasera, la elegimos
+                    if (trasera) {
+                        selectedDeviceId = trasera.deviceId;
+                    } else if (videoInputDevices.length > 1) {
+                        // Si no tiene etiquetas claras pero hay más de una cámara, habitualmente la última es la trasera principal
+                        selectedDeviceId = videoInputDevices[videoInputDevices.length - 1].deviceId;
+                    }
 
-        function escanearFramerates() {
-            // Configuramos el motor para que busque exclusivamente códigos PDF417 de DNI
+                    // Forzamos el inicio del escáner usando el ID de cámara seleccionado
+                    iniciarEscaneo(selectedDeviceId);
+                } else {
+                    alert("No se encontraron cámaras disponibles en este dispositivo.");
+                }
+            })
+            .catch((err) => {
+                console.error("Error al listar dispositivos médicos/cámaras:", err);
+                alert("Error de acceso a los componentes de video.");
+            });
+
+        function iniciarEscaneo(deviceId) {
             const hints = new Map();
             hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.PDF_417]);
-            
-            codeReader.decodeFromVideoElement(videoElement, (result, err) => {
+
+            // Esta función enciende la cámara asignada al ID y procesa el video al mismo tiempo
+            codeReader.decodeFromVideoDevice(deviceId, videoElement, (result, err) => {
                 if (result && escaneando) {
                     procesarDatosDNI(result.text);
                 }
+                // Los errores de enfoque se ignoran para mantener el ciclo fluido
             }, hints);
         }
 
         function procesarDatosDNI(textoEscaneado) {
-            // El DNI argentino separa los datos con arrobas (@)
             const campos = textoEscaneado.split('@');
             if (campos.length >= 5) {
-                // Buscamos un bloque de texto que tenga entre 7 y 8 números seguidos (el número de documento)
                 let dniDetectado = campos.find(c => /^\d{7,8}\$/.test(c.trim()));
                 if (dniDetectado) {
-                    escaneando = false; // Pausamos temporalmente el escáner para evitar duplicados
+                    escaneando = false; // Pausa el escáner para evitar enviar datos seguidos
                     enviarAGoogleSheets(dniDetectado.trim());
                 }
             }
@@ -110,7 +120,7 @@
                 }
                 setTimeout(() => { 
                     resultadoDiv.style.display = "none"; 
-                    escaneando = true; // Reactiva la cámara tras 4 segundos
+                    escaneando = true; // Reactiva la cámara
                 }, 4000);
             })
             .catch(err => {
