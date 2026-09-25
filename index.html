@@ -1,60 +1,114 @@
-javascriptconst URL_SCRIPT_GOOGLE = "PEGA_AQUÍ_TU_URL_DE_APPS_SCRIPT"; // Reemplaza esto con tu URL /exec
-const videoElement = document.getElementById('video-camara');
-const resultadoDiv = document.getElementById('resultado');
-let escaneando = true; // Control para evitar escaneos duplicados seguidos
+html<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Acceso - Escáner DNI</title>
+    <!-- Cargamos el motor que lee el código de barras -->
+    <script src="https://unpkg.com"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background-color: #f4f4f9; }
+        #contenedor-camara { width: 100%; max-width: 500px; margin: auto; position: relative; border: 3px solid #ccc; border-radius: 8px; overflow: hidden; }
+        video { width: 100%; height: auto; display: block; }
+        .guia-escaneo { position: absolute; top: 10%; left: 10%; width: 80%; height: 80%; border: 2px dashed rgba(255,255,255,0.6); box-sizing: border-box; pointer-events: none; }
+        #resultado { margin-top: 20px; padding: 15px; font-size: 1.2rem; font-weight: bold; border-radius: 5px; display: none; }
+        .autorizado { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .denegado { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
 
-// (Mantener aquí las funciones de inicialización de cámara y ZXing explicadas previamente)
+    <h2>Escáner Web de DNI Argentino</h2>
+    <p>Coloque el código de barras del DNI horizontalmente dentro del recuadro.</p>
 
-function procesarDatosDNI(textoEscaneado) {
-    if (!escaneando) return; // Si está procesando, ignora lecturas rápidas
-    
-    const campos = textoEscaneado.split('@');
-    if (campos.length >= 5) {
-        // Buscamos el bloque que corresponda a un número de DNI (7 u 8 dígitos)
-        let dniDetectado = campos.find(c => /^\d{7,8}\$/.test(c.trim()));
+    <!-- Aquí se mostrará la cámara de tu celular -->
+    <div id="contenedor-camara">
+        <video id="video-camara"></video>
+        <div class="guia-escaneo"></div>
+    </div>
+
+    <!-- Cuadro de texto que cambiará a VERDE o ROJO -->
+    <div id="resultado"></div>
+
+    <!-- OBLIGATORIO: Todo el código de conexión a Google va adentro de este bloque script -->
+    <script>
+        // PEGA TU URL DE APPS SCRIPT AQUÍ ABAJO (La que termina en /exec)
+        const URL_SCRIPT_GOOGLE = "TU_URL_DE_APPS_SCRIPT_AQUI"; 
         
-        if (dniDetectado) {
-            escaneando = false; // Pausa el escáner visual
-            enviarAGoogleSheets(dniDetectado.trim());
+        const videoElement = document.getElementById('video-camara');
+        const resultadoDiv = document.getElementById('resultado');
+        let escaneando = true;
+        const codeReader = new ZXing.BrowserAztecCodeReader();
+
+        // Encender cámara trasera
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+            .then((stream) => {
+                videoElement.srcObject = stream;
+                videoElement.setAttribute("playsinline", true);
+                videoElement.play();
+                escanearFramerates();
+            })
+            .catch(err => {
+                console.error("Error al acceder a la cámara: ", err);
+                alert("Por favor, asegúrate de estar ingresando desde HTTPS para activar la cámara.");
+            });
+
+        function escanearFramerates() {
+            const hints = new Map();
+            hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.PDF_417]);
+            codeReader.decodeFromVideoElement(videoElement, (result, err) => {
+                if (result && escaneando) {
+                    procesarDatosDNI(result.text);
+                }
+            }, hints);
         }
-    }
-}
 
-function enviarAGoogleSheets(dni) {
-    resultadoDiv.style.display = "block";
-    resultadoDiv.className = "";
-    resultadoDiv.innerHTML = "Consultando base de datos...";
-
-    // Enviamos el DNI de forma segura mediante POST
-    fetch(URL_SCRIPT_GOOGLE, {
-        method: "POST",
-        mode: "cors",
-        body: JSON.stringify({ dni: dni })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === "success") {
-            if (data.autorizado) {
-                resultadoDiv.className = "autorizado";
-                resultadoDiv.innerHTML = `✅ ACCESO PERMITIDO<br>${data.nombre}<br>DNI: ${dni}`;
-            } else {
-                resultadoDiv.className = "denegado";
-                resultadoDiv.innerHTML = `🚨 ALERTA: NO AUTORIZADO<br>DNI: ${dni} registrado como denegado.`;
+        function procesarDatosDNI(textoEscaneado) {
+            const campos = textoEscaneado.split('@');
+            if (campos.length >= 5) {
+                let dniDetectado = campos.find(c => /^\d{7,8}\$/.test(c.trim()));
+                if (dniDetectado) {
+                    escaneando = false;
+                    enviarAGoogleSheets(dniDetectado.trim());
+                }
             }
-        } else {
-            resultadoDiv.innerHTML = "⚠️ Error en la respuesta del servidor.";
         }
-        
-        // Reactivar el escáner tras 4 segundos
-        setTimeout(() => { 
-            resultadoDiv.style.display = "none"; 
-            escaneando = true;
-        }, 4000);
-    })
-    .catch(err => {
-        console.error("Error:", err);
-        resultadoDiv.className = "denegado";
-        resultadoDiv.innerHTML = "❌ Error de conexión con Google Sheets.";
-        setTimeout(() => { escaneando = true; }, 4000);
-    });
-}
+
+        function enviarAGoogleSheets(dni) {
+            resultadoDiv.style.display = "block";
+            resultadoDiv.className = "";
+            resultadoDiv.innerHTML = "Consultando base de datos...";
+
+            fetch(URL_SCRIPT_GOOGLE, {
+                method: "POST",
+                mode: "cors",
+                body: JSON.stringify({ dni: dni })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === "success") {
+                    if (data.autorizado) {
+                        resultadoDiv.className = "autorizado";
+                        resultadoDiv.innerHTML = `✅ ACCESO PERMITIDO<br>${data.nombre}<br>DNI: ${dni}`;
+                    } else {
+                        resultadoDiv.className = "denegado";
+                        resultadoDiv.innerHTML = `🚨 ALERTA: NO AUTORIZADO<br>DNI: ${dni} no está en la lista.`;
+                    }
+                } else {
+                    resultadoDiv.innerHTML = "⚠️ Error en la respuesta del servidor.";
+                }
+                setTimeout(() => { 
+                    resultadoDiv.style.display = "none"; 
+                    escaneando = true;
+                }, 4000);
+            })
+            .catch(err => {
+                console.error("Error:", err);
+                resultadoDiv.className = "denegado";
+                resultadoDiv.innerHTML = "❌ Error de conexión con Google Sheets.";
+                setTimeout(() => { escaneando = true; }, 4000);
+            });
+        }
+    </script>
+</body>
+</html>
