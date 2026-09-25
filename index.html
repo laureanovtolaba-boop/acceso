@@ -1,0 +1,60 @@
+javascriptconst URL_SCRIPT_GOOGLE = "PEGA_AQUÍ_TU_URL_DE_APPS_SCRIPT"; // Reemplaza esto con tu URL /exec
+const videoElement = document.getElementById('video-camara');
+const resultadoDiv = document.getElementById('resultado');
+let escaneando = true; // Control para evitar escaneos duplicados seguidos
+
+// (Mantener aquí las funciones de inicialización de cámara y ZXing explicadas previamente)
+
+function procesarDatosDNI(textoEscaneado) {
+    if (!escaneando) return; // Si está procesando, ignora lecturas rápidas
+    
+    const campos = textoEscaneado.split('@');
+    if (campos.length >= 5) {
+        // Buscamos el bloque que corresponda a un número de DNI (7 u 8 dígitos)
+        let dniDetectado = campos.find(c => /^\d{7,8}\$/.test(c.trim()));
+        
+        if (dniDetectado) {
+            escaneando = false; // Pausa el escáner visual
+            enviarAGoogleSheets(dniDetectado.trim());
+        }
+    }
+}
+
+function enviarAGoogleSheets(dni) {
+    resultadoDiv.style.display = "block";
+    resultadoDiv.className = "";
+    resultadoDiv.innerHTML = "Consultando base de datos...";
+
+    // Enviamos el DNI de forma segura mediante POST
+    fetch(URL_SCRIPT_GOOGLE, {
+        method: "POST",
+        mode: "cors",
+        body: JSON.stringify({ dni: dni })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === "success") {
+            if (data.autorizado) {
+                resultadoDiv.className = "autorizado";
+                resultadoDiv.innerHTML = `✅ ACCESO PERMITIDO<br>${data.nombre}<br>DNI: ${dni}`;
+            } else {
+                resultadoDiv.className = "denegado";
+                resultadoDiv.innerHTML = `🚨 ALERTA: NO AUTORIZADO<br>DNI: ${dni} registrado como denegado.`;
+            }
+        } else {
+            resultadoDiv.innerHTML = "⚠️ Error en la respuesta del servidor.";
+        }
+        
+        // Reactivar el escáner tras 4 segundos
+        setTimeout(() => { 
+            resultadoDiv.style.display = "none"; 
+            escaneando = true;
+        }, 4000);
+    })
+    .catch(err => {
+        console.error("Error:", err);
+        resultadoDiv.className = "denegado";
+        resultadoDiv.innerHTML = "❌ Error de conexión con Google Sheets.";
+        setTimeout(() => { escaneando = true; }, 4000);
+    });
+}
