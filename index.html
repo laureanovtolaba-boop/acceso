@@ -40,7 +40,7 @@
         const videoElement = document.getElementById('video-camara');
         const resultadoDiv = document.getElementById('resultado');
         let escaneando = true;
-        const codeReader = new ZXing.BrowserAztecCodeReader();
+        const codeReader = new ZXing.BrowserMultiFormatReader();
 
         // Encender cámara trasera
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
