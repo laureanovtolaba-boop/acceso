@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Acceso - Escáner DNI</title>
     
-    <!-- Cargamos el motor que lee el código de barras -->
+    <!-- Cargamos el motor correcto de la librería -->
     <script src="https://unpkg.com"></script>
     
     <style>
         body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background-color: #f4f4f9; }
-        #contenedor-camara { width: 100%; max-width: 500px; margin: auto; position: relative; border: 3px solid #ccc; border-radius: 8px; overflow: hidden; }
+        #contenedor-camara { width: 100%; max-width: 500px; margin: auto; position: relative; border: 3px solid #ccc; border-radius: 8px; overflow: hidden; background-color: #000; }
         video { width: 100%; height: auto; display: block; }
         .guia-escaneo { position: absolute; top: 10%; left: 10%; width: 80%; height: 80%; border: 2px dashed rgba(255,255,255,0.6); box-sizing: border-box; pointer-events: none; }
         #resultado { margin-top: 20px; padding: 15px; font-size: 1.2rem; font-weight: bold; border-radius: 5px; display: none; }
@@ -23,42 +23,63 @@
     <h2>Escáner Web de DNI Argentino</h2>
     <p>Coloque el código de barras del DNI horizontalmente dentro del recuadro.</p>
 
-    <!-- Aquí se mostrará la cámara de tu celular -->
+    <!-- Contenedor del video -->
     <div id="contenedor-camara">
-        <video id="video-camara"></video>
+        <video id="video-camara" autoplay playsinline muted></video>
         <div class="guia-escaneo"></div>
     </div>
 
-    <!-- Cuadro de texto que cambiará a VERDE o ROJO -->
+    <!-- Alertas de acceso -->
     <div id="resultado"></div>
 
-    <!-- OBLIGATORIO: Todo el código de conexión a Google va adentro de este bloque script -->
     <script>
-        // PEGA TU URL DE APPS SCRIPT AQUÍ ABAJO (La que termina en /exec)
+        // REEMPLAZÁ ESTO CON TU URL DE GOOGLE APPS SCRIPT (La que termina en /exec)
         const URL_SCRIPT_GOOGLE = "https://script.google.com/macros/s/AKfycbzcGBT4RFgvnba-rB4Fn4PhJXUuNLJPjoUjW9ulaX38yoNyWiB3MWU_aFAssC0MejX9hw/exec"; 
         
         const videoElement = document.getElementById('video-camara');
         const resultadoDiv = document.getElementById('resultado');
         let escaneando = true;
+        
+        // Usamos el lector multiformato corregido
         const codeReader = new ZXing.BrowserMultiFormatReader();
 
-        // Encender cámara trasera
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-            .then((stream) => {
-                videoElement.srcObject = stream;
-                videoElement.setAttribute("playsinline", true);
-                videoElement.play();
-                escanearFramerates();
+        // FUNCIÓN CLAVE: Fuerza al celular a buscar y encender la cámara trasera directamente por hardware
+        codeReader.listVideoInputDevices()
+            .then((videoInputDevices) => {
+                if (videoInputDevices.length > 0) {
+                    let idCamaraSeleccionada = videoInputDevices[0].deviceId; // Por defecto la primera
+                    
+                    // Buscamos la cámara que tenga la etiqueta 'back' o 'trasera'
+                    const camaraTrasera = videoInputDevices.find(device => 
+                        device.label.toLowerCase().includes('back') || 
+                        device.label.toLowerCase().includes('trasera') ||
+                        device.label.toLowerCase().includes('environment')
+                    );
+                    
+                    if (camaraTrasera) {
+                        idCamaraSeleccionada = camaraTrasera.deviceId;
+                    } else if (videoInputDevices.length > 1) {
+                        // Si no tienen nombre claro, en Android la última suele ser la trasera principal
+                        idCamaraSeleccionada = videoInputDevices[videoInputDevices.length - 1].deviceId;
+                    }
+
+                    // Iniciamos el lector amarrado a esa cámara específica
+                    encenderYEscear(idCamaraSeleccionada);
+                } else {
+                    alert("No se detectaron cámaras en este dispositivo.");
+                }
             })
-            .catch(err => {
-                console.error("Error al acceder a la cámara: ", err);
-                alert("Por favor, asegúrate de estar ingresando desde HTTPS para activar la cámara.");
+            .catch((err) => {
+                console.error("Error al listar cámaras:", err);
+                alert("Error de acceso al hardware de video.");
             });
 
-        function escanearFramerates() {
+        function encenderYEscear(deviceId) {
             const hints = new Map();
             hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.PDF_417]);
-            codeReader.decodeFromVideoElement(videoElement, (result, err) => {
+
+            // Enciende la cámara asignada y se queda procesando las imágenes en vivo
+            codeReader.decodeFromVideoDevice(deviceId, videoElement, (result, err) => {
                 if (result && escaneando) {
                     procesarDatosDNI(result.text);
                 }
