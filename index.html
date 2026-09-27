@@ -5,14 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Acceso - Escáner DNI</title>
     
-    <!-- Librería ZXing para procesar códigos de barra -->
+    <!-- Cambiamos a la librería especializada en corregir pantallas negras de Samsung -->
     <script src="https://unpkg.com"></script>
     
     <style>
         body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background-color: #f4f4f9; }
-        #contenedor-camara { width: 100%; max-width: 500px; margin: auto; position: relative; border: 3px solid #ccc; border-radius: 8px; overflow: hidden; background-color: #000; }
-        video { width: 100%; height: auto; display: block; }
-        .guia-escaneo { position: absolute; top: 15%; left: 5%; width: 90%; height: 70%; border: 3px dashed #007bff; box-sizing: border-box; pointer-events: none; }
+        #contenedor-camara { width: 100%; max-width: 500px; margin: auto; border: 3px solid #ccc; border-radius: 8px; overflow: hidden; background-color: #000; position: relative; }
+        /* Forzamos dimensiones y visualización nativa */
+        #reader { width: 100% !important; border: none !important; }
+        #reader video { width: 100% !important; height: auto !important; display: block !important; }
         #resultado { margin-top: 20px; padding: 15px; font-size: 1.2rem; font-weight: bold; border-radius: 5px; display: none; }
         .autorizado { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .denegado { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
@@ -21,76 +22,51 @@
 <body>
 
     <h2>Escáner Web de DNI Argentino</h2>
-    <p>Coloque el código de barras del DNI horizontalmente dentro del recuadro azul.</p>
+    <p>Coloque el código de barras del DNI horizontalmente dentro del recuadro de la cámara.</p>
 
     <div id="contenedor-camara">
-        <!-- Eliminamos los problemas de congelamiento de Android 14 añadiendo controles de hardware nativos -->
-        <video id="video-camara" autoplay playsinline muted></video>
-        <div class="guia-escaneo"></div>
+        <!-- El motor inyectará el video directamente aquí -->
+        <div id="reader"></div>
     </div>
 
     <div id="resultado"></div>
 
     <script>
         const URL_SCRIPT_GOOGLE = "https://script.google.com/macros/s/AKfycbzcGBT4RFgvnba-rB4Fn4PhJXUuNLJPjoUjW9ulaX38yoNyWiB3MWU_aFAssC0MejX9hw/exec"; 
-        
-        const videoElement = document.getElementById('video-camara');
         const resultadoDiv = document.getElementById('resultado');
         let escaneando = true;
-        
-        const codeReader = new ZXing.BrowserMultiFormatReader();
-        const hints = new Map();
-        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.PDF_417]);
 
-        // ADAPTACIÓN GALAXY A23: Configuración con baja resolución inicial para despertar al sensor nativo
-        const opcionesCamara = {
-            video: {
-                facingMode: "environment",
-                width: { ideal: 640 },
-                height: { ideal: 480 }
+        // Inicializamos el nuevo motor de lectura
+        const html5QrcodeScanner = new Html5Qrcode("reader");
+
+        // Configuración nativa para decodificar PDF417 (DNI Argentino)
+        const configuracion = { 
+            fps: 15, 
+            qrbox: function(viewfinderWidth, viewfinderHeight) {
+                // Creamos un recuadro optimizado horizontal para el DNI
+                return { width: Math.floor(viewfinderWidth * 0.85), height: Math.floor(viewfinderHeight * 0.45) };
             },
-            audio: false
+            formatsToSupport: [ Html5QrcodeSupportedFormats.PDF_417 ],
+            experimentalFeatures: { useBarCodeDetectorIfSupported: true }
         };
 
-        // Forzamos un pequeño retraso de carga (setTimeout) para que One UI 6 libere el control del hardware
-        setTimeout(() => {
-            navigator.mediaDevices.getUserMedia(opcionesCamara)
-                .then((stream) => {
-                    videoElement.srcObject = stream;
-                    
-                    // Evento para asegurar que Android renderice el contenido del flujo
-                    videoElement.onloadedmetadata = () => {
-                        videoElement.play()
-                            .then(() => {
-                                // Forzamos una aceleración gráfica en el lienzo del video
-                                const canvas = document.createElement('canvas');
-                                const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                                
-                                analizarFotogramas();
-                            })
-                            .catch(e => console.log("Error de auto-reproducción forzada:", e));
-                    };
-                })
-                .catch((err) => {
-                    console.error("Falla en canal primario:", err);
-                    // Canal alternativo de contingencia si falla la resolución ideal
-                    navigator.mediaDevices.getUserMedia({ video: true })
-                        .then((stream) => {
-                            videoElement.srcObject = stream;
-                            videoElement.play();
-                            analizarFotogramas();
-                        })
-                        .catch(e => alert("Permití el acceso físico a la cámara desde el candado de la barra de navegación."));
-                });
-        }, 300);
-
-        function analizarFotogramas() {
-            codeReader.decodeFromVideoElement(videoElement, (result, err) => {
-                if (result && escaneando) {
-                    procesarDatosDNI(result.text);
+        // Forzamos el inicio de la cámara trasera de forma nativa e inmediata
+        html5QrcodeScanner.start(
+            { facingMode: "environment" }, 
+            configuracion,
+            (decodedText) => {
+                // Al detectar una lectura exitosa
+                if (escaneando) {
+                    procesarDatosDNI(decodedText);
                 }
-            }, hints);
-        }
+            },
+            (errorMessage) => {
+                // Errores de enfoque continuos se ignoran silenciosamente
+            }
+        ).catch((err) => {
+            console.error("Error crítico al encender cámara:", err);
+            alert("No se pudo iniciar la cámara trasera. Asegúrate de otorgar los permisos necesarios.");
+        });
 
         function procesarDatosDNI(textoEscaneado) {
             const campos = textoEscaneado.split('@');
