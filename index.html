@@ -24,6 +24,7 @@
     <p>Coloque el código de barras del DNI horizontalmente dentro del recuadro.</p>
 
     <div id="contenedor-camara">
+        <!-- Agregamos controles nativos de autoreproducción directa -->
         <video id="video-camara" autoplay playsinline muted></video>
         <div class="guia-escaneo"></div>
     </div>
@@ -40,42 +41,24 @@
         
         const codeReader = new ZXing.BrowserMultiFormatReader();
 
-        // SELECCIÓN DE HARDWARE OPTIMIZADA
-        codeReader.listVideoInputDevices()
-            .then((videoInputDevices) => {
-                if (videoInputDevices.length > 0) {
-                    // Ordenamos las cámaras al revés, ya que en Android la cámara trasera principal suele ser la última de la lista
-                    const camarasInvertidas = videoInputDevices.reverse();
-                    
-                    // Buscamos prioritariamente una que diga 'back' o 'trasera'
-                    let camaraSeleccionada = camarasInvertidas.find(device => 
-                        device.label.toLowerCase().includes('back') || 
-                        device.label.toLowerCase().includes('trasera') ||
-                        device.label.toLowerCase().includes('environment')
-                    );
-                    
-                    // Si no tiene etiquetas claras, usamos la primera de nuestra lista invertida (última del sistema)
-                    let idCamara = camaraSeleccionada ? camaraSeleccionada.deviceId : camarasInvertidas[0].deviceId;
+        // Inicializamos los filtros indicándole que busque códigos PDF417
+        const hints = new Map();
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.PDF_417]);
 
-                    encenderYEscaneat(idCamara);
-                } else {
-                    alert("No se detectaron cámaras.");
-                }
-            })
-            .catch((err) => {
-                console.error("Error al listar cámaras:", err);
-            });
-
-        function encenderYEscaneat(deviceId) {
-            const hints = new Map();
-            hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.PDF_417]);
-
-            codeReader.decodeFromVideoDevice(deviceId, videoElement, (result, err) => {
-                if (result && escaneando) {
-                    procesarDatosDNI(result.text);
-                }
-            }, hints);
-        }
+        // REEMPLAZO DIRECTO: Forzamos la asignación de cámara trasera sin pasar por listVideoInputDevices
+        codeReader.decodeFromConstraints({
+            video: { 
+                facingMode: "environment",
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            }
+        }, videoElement, (result, err) => {
+            if (result && escaneando) {
+                procesarDatosDNI(result.text);
+            }
+        }, hints).catch(err => {
+            console.error("Error al arrancar la cámara:", err);
+        });
 
         function procesarDatosDNI(textoEscaneado) {
             const campos = textoEscaneado.split('@');
