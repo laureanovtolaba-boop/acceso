@@ -5,27 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Acceso - Escáner DNI</title>
     
-    <!-- Cambiamos a la librería especializada en corregir pantallas negras de Samsung -->
+    <!-- Librería especializada -->
     <script src="https://unpkg.com"></script>
     
     <style>
         body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background-color: #f4f4f9; }
-        #contenedor-camara { width: 100%; max-width: 500px; margin: auto; border: 3px solid #ccc; border-radius: 8px; overflow: hidden; background-color: #000; position: relative; }
-        /* Forzamos dimensiones y visualización nativa */
+        #contenedor-camara { width: 100%; max-width: 500px; margin: auto; border: 3px solid #ccc; border-radius: 8px; overflow: hidden; background-color: #000; min-height: 250px; position: relative; }
         #reader { width: 100% !important; border: none !important; }
         #reader video { width: 100% !important; height: auto !important; display: block !important; }
         #resultado { margin-top: 20px; padding: 15px; font-size: 1.2rem; font-weight: bold; border-radius: 5px; display: none; }
         .autorizado { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .denegado { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .btn-iniciar { background-color: #007bff; color: white; border: none; padding: 12px 24px; font-size: 1rem; font-weight: bold; border-radius: 5px; margin: 15px auto; cursor: pointer; display: block; }
+        .btn-iniciar:active { background-color: #0056b3; }
     </style>
 </head>
 <body>
 
     <h2>Escáner Web de DNI Argentino</h2>
-    <p>Coloque el código de barras del DNI horizontalmente dentro del recuadro de la cámara.</p>
+    <p>Presione el botón para activar la cámara trasera y comience a escanear.</p>
+    
+    <!-- Botón de activación forzada para romper el bloqueo de One UI 6 -->
+    <button class="btn-iniciar" id="btn-arrancar" onclick="encenderCamaraNativa()">ACTIVAR CÁMARA</button>
 
     <div id="contenedor-camara">
-        <!-- El motor inyectará el video directamente aquí -->
         <div id="reader"></div>
     </div>
 
@@ -34,39 +37,43 @@
     <script>
         const URL_SCRIPT_GOOGLE = "https://script.google.com/macros/s/AKfycbzcGBT4RFgvnba-rB4Fn4PhJXUuNLJPjoUjW9ulaX38yoNyWiB3MWU_aFAssC0MejX9hw/exec"; 
         const resultadoDiv = document.getElementById('resultado');
+        const botonArrancar = document.getElementById('btn-arrancar');
         let escaneando = true;
+        let html5QrcodeScanner = null;
 
-        // Inicializamos el nuevo motor de lectura
-        const html5QrcodeScanner = new Html5Qrcode("reader");
+        function encenderCamaraNativa() {
+            // Ocultamos el botón para evitar doble clic
+            botonArrancar.style.display = "none";
 
-        // Configuración nativa para decodificar PDF417 (DNI Argentino)
-        const configuracion = { 
-            fps: 15, 
-            qrbox: function(viewfinderWidth, viewfinderHeight) {
-                // Creamos un recuadro optimizado horizontal para el DNI
-                return { width: Math.floor(viewfinderWidth * 0.85), height: Math.floor(viewfinderHeight * 0.45) };
-            },
-            formatsToSupport: [ Html5QrcodeSupportedFormats.PDF_417 ],
-            experimentalFeatures: { useBarCodeDetectorIfSupported: true }
-        };
+            // Inicializamos el motor sobre el contenedor div
+            html5QrcodeScanner = new Html5Qrcode("reader");
 
-        // Forzamos el inicio de la cámara trasera de forma nativa e inmediata
-        html5QrcodeScanner.start(
-            { facingMode: "environment" }, 
-            configuracion,
-            (decodedText) => {
-                // Al detectar una lectura exitosa
-                if (escaneando) {
-                    procesarDatosDNI(decodedText);
+            const configuracion = { 
+                fps: 10, 
+                qrbox: (viewfinderWidth, viewfinderHeight) => {
+                    return { width: Math.floor(viewfinderWidth * 0.85), height: Math.floor(viewfinderHeight * 0.5) };
+                },
+                formatsToSupport: [ Html5QrcodeSupportedFormats.PDF_417 ]
+            };
+
+            // Ejecución vinculada a la interacción del botón físico
+            html5QrcodeScanner.start(
+                { facingMode: "environment" }, 
+                configuracion,
+                (decodedText) => {
+                    if (escaneando) {
+                        procesarDatosDNI(decodedText);
+                    }
+                },
+                (errorMessage) => {
+                    // Ignorar errores de búsqueda de fotograma
                 }
-            },
-            (errorMessage) => {
-                // Errores de enfoque continuos se ignoran silenciosamente
-            }
-        ).catch((err) => {
-            console.error("Error crítico al encender cámara:", err);
-            alert("No se pudo iniciar la cámara trasera. Asegúrate de otorgar los permisos necesarios.");
-        });
+            ).catch((err) => {
+                console.error("Error al encender:", err);
+                alert("Por favor, dale acceso a la cámara si el navegador lo solicita.");
+                botonArrancar.style.display = "block"; // Reaparece el botón si falló
+            });
+        }
 
         function procesarDatosDNI(textoEscaneado) {
             const campos = textoEscaneado.split('@');
