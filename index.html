@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Acceso - Escáner DNI</title>
     
-    <!-- Cargamos el motor de lectura ZXing -->
+    <!-- Librería ZXing para procesar códigos de barra -->
     <script src="https://unpkg.com"></script>
     
     <style>
@@ -24,7 +24,7 @@
     <p>Coloque el código de barras del DNI horizontalmente dentro del recuadro azul.</p>
 
     <div id="contenedor-camara">
-        <!-- Eliminamos bloqueos nativos agregando propiedades de reproducción forzada -->
+        <!-- Eliminamos los problemas de congelamiento de Android 14 añadiendo controles de hardware nativos -->
         <video id="video-camara" autoplay playsinline muted></video>
         <div class="guia-escaneo"></div>
     </div>
@@ -42,38 +42,49 @@
         const hints = new Map();
         hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.PDF_417]);
 
-        // SOLUCIÓN DEFINITIVA: Encendido directo por el navegador (Ignora las fallas de la librería)
+        // ADAPTACIÓN GALAXY A23: Configuración con baja resolución inicial para despertar al sensor nativo
         const opcionesCamara = {
             video: {
-                facingMode: { exact: "environment" } // Obliga al celular a usar la cámara trasera principal
+                facingMode: "environment",
+                width: { ideal: 640 },
+                height: { ideal: 480 }
             },
             audio: false
         };
 
-        navigator.mediaDevices.getUserMedia(opcionesCamara)
-            .then((stream) => {
-                // Le asignamos el flujo de video directo de la cámara al recuadro de la pantalla
-                videoElement.srcObject = stream;
-                videoElement.play();
-                
-                // Una vez encendida la cámara, le decimos a la librería que empiece a leer los fotogramas
-                analizarFotogramas();
-            })
-            .catch((err) => {
-                console.error("Error al encender la cámara trasera principal:", err);
-                
-                // Opción alternativa si el celular no tiene la etiqueta 'exact' cargada en su sistema
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-                    .then((stream) => {
-                        videoElement.srcObject = stream;
-                        videoElement.play();
-                        analizarFotogramas();
-                    })
-                    .catch(e => alert("Error crítico: No se pudo acceder a la cámara trasera. Revisa los permisos del candado."));
-            });
+        // Forzamos un pequeño retraso de carga (setTimeout) para que One UI 6 libere el control del hardware
+        setTimeout(() => {
+            navigator.mediaDevices.getUserMedia(opcionesCamara)
+                .then((stream) => {
+                    videoElement.srcObject = stream;
+                    
+                    // Evento para asegurar que Android renderice el contenido del flujo
+                    videoElement.onloadedmetadata = () => {
+                        videoElement.play()
+                            .then(() => {
+                                // Forzamos una aceleración gráfica en el lienzo del video
+                                const canvas = document.createElement('canvas');
+                                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                                
+                                analizarFotogramas();
+                            })
+                            .catch(e => console.log("Error de auto-reproducción forzada:", e));
+                    };
+                })
+                .catch((err) => {
+                    console.error("Falla en canal primario:", err);
+                    // Canal alternativo de contingencia si falla la resolución ideal
+                    navigator.mediaDevices.getUserMedia({ video: true })
+                        .then((stream) => {
+                            videoElement.srcObject = stream;
+                            videoElement.play();
+                            analizarFotogramas();
+                        })
+                        .catch(e => alert("Permití el acceso físico a la cámara desde el candado de la barra de navegación."));
+                });
+        }, 300);
 
         function analizarFotogramas() {
-            // Lee continuamente el video nativo que ya está funcionando en pantalla
             codeReader.decodeFromVideoElement(videoElement, (result, err) => {
                 if (result && escaneando) {
                     procesarDatosDNI(result.text);
