@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Acceso - Escáner DNI</title>
     
-    <!-- Motor de la librería -->
+    <!-- Cargamos el motor correcto de la librería ZXing -->
     <script src="https://unpkg.com"></script>
     
     <style>
@@ -23,16 +23,17 @@
     <h2>Escáner Web de DNI Argentino</h2>
     <p>Coloque el código de barras del DNI horizontalmente dentro del recuadro.</p>
 
+    <!-- Contenedor del reproductor de video -->
     <div id="contenedor-camara">
-        <!-- Agregamos controles nativos de autoreproducción directa -->
         <video id="video-camara" autoplay playsinline muted></video>
         <div class="guia-escaneo"></div>
     </div>
 
+    <!-- Alertas visuales de ingreso -->
     <div id="resultado"></div>
 
     <script>
-        // REEMPLAZÁ ESTO CON TU URL DE GOOGLE APPS SCRIPT (La que termina en /exec)
+        // Tu URL de Google Apps Script vinculada de forma directa
         const URL_SCRIPT_GOOGLE = "https://script.google.com/macros/s/AKfycbzcGBT4RFgvnba-rB4Fn4PhJXUuNLJPjoUjW9ulaX38yoNyWiB3MWU_aFAssC0MejX9hw/exec"; 
         
         const videoElement = document.getElementById('video-camara');
@@ -40,41 +41,36 @@
         let escaneando = true;
         
         const codeReader = new ZXing.BrowserMultiFormatReader();
-
-        // Inicializamos los filtros indicándole que busque códigos PDF417
         const hints = new Map();
         hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.PDF_417]);
 
-        // REEMPLAZO DIRECTO: Forzamos la asignación de cámara trasera sin pasar por listVideoInputDevices
-        codeReader.decodeFromConstraints({
-            video: { 
-                facingMode: "environment",
-                width: { ideal: 640 },
-                height: { ideal: 480 }
-            }
-        }, videoElement, (result, err) => {
+        // Inicialización automática de la cámara trasera nativa del dispositivo móvil
+        codeReader.decodeFromVideoDevice(null, videoElement, (result, err) => {
             if (result && escaneando) {
                 procesarDatosDNI(result.text);
             }
         }, hints).catch(err => {
-            console.error("Error al arrancar la cámara:", err);
+            console.error("Error de inicialización del hardware:", err);
         });
 
+        // Separación de los campos empaquetados en el código de barras del DNI (@)
         function procesarDatosDNI(textoEscaneado) {
             const campos = textoEscaneado.split('@');
             if (campos.length >= 5) {
+                // Filtramos la cadena para aislar un patrón numérico de 7 u 8 dígitos continuos
                 let dniDetectado = campos.find(c => /^\d{7,8}\$/.test(c.trim()));
                 if (dniDetectado) {
-                    escaneando = false;
+                    escaneando = false; // Pausamos lecturas sucesivas rápidas
                     enviarAGoogleSheets(dniDetectado.trim());
                 }
             }
         }
 
+        // Transmisión asincrónica segura hacia la API de Google Drive
         function enviarAGoogleSheets(dni) {
             resultadoDiv.style.display = "block";
             resultadoDiv.className = "";
-            resultadoDiv.innerHTML = "Consultando base de datos...";
+            resultadoDiv.innerHTML = "🔍 Consultando base de datos...";
 
             fetch(URL_SCRIPT_GOOGLE, {
                 method: "POST",
@@ -96,7 +92,7 @@
                 }
                 setTimeout(() => { 
                     resultadoDiv.style.display = "none"; 
-                    escaneando = true;
+                    escaneando = true; // Habilitamos la cámara para un nuevo escaneo
                 }, 4000);
             })
             .catch(err => {
