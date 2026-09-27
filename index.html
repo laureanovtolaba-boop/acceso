@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Acceso - Escáner DNI</title>
     
-    <!-- Cargamos el motor correcto de la librería -->
+    <!-- Motor de la librería -->
     <script src="https://unpkg.com"></script>
     
     <style>
@@ -23,13 +23,11 @@
     <h2>Escáner Web de DNI Argentino</h2>
     <p>Coloque el código de barras del DNI horizontalmente dentro del recuadro.</p>
 
-    <!-- Contenedor del video -->
     <div id="contenedor-camara">
         <video id="video-camara" autoplay playsinline muted></video>
         <div class="guia-escaneo"></div>
     </div>
 
-    <!-- Alertas de acceso -->
     <div id="resultado"></div>
 
     <script>
@@ -40,45 +38,38 @@
         const resultadoDiv = document.getElementById('resultado');
         let escaneando = true;
         
-        // Usamos el lector multiformato corregido
         const codeReader = new ZXing.BrowserMultiFormatReader();
 
-        // FUNCIÓN CLAVE: Fuerza al celular a buscar y encender la cámara trasera directamente por hardware
+        // SELECCIÓN DE HARDWARE OPTIMIZADA
         codeReader.listVideoInputDevices()
             .then((videoInputDevices) => {
                 if (videoInputDevices.length > 0) {
-                    let idCamaraSeleccionada = videoInputDevices[0].deviceId; // Por defecto la primera
+                    // Ordenamos las cámaras al revés, ya que en Android la cámara trasera principal suele ser la última de la lista
+                    const camarasInvertidas = videoInputDevices.reverse();
                     
-                    // Buscamos la cámara que tenga la etiqueta 'back' o 'trasera'
-                    const camaraTrasera = videoInputDevices.find(device => 
+                    // Buscamos prioritariamente una que diga 'back' o 'trasera'
+                    let camaraSeleccionada = camarasInvertidas.find(device => 
                         device.label.toLowerCase().includes('back') || 
                         device.label.toLowerCase().includes('trasera') ||
                         device.label.toLowerCase().includes('environment')
                     );
                     
-                    if (camaraTrasera) {
-                        idCamaraSeleccionada = camaraTrasera.deviceId;
-                    } else if (videoInputDevices.length > 1) {
-                        // Si no tienen nombre claro, en Android la última suele ser la trasera principal
-                        idCamaraSeleccionada = videoInputDevices[videoInputDevices.length - 1].deviceId;
-                    }
+                    // Si no tiene etiquetas claras, usamos la primera de nuestra lista invertida (última del sistema)
+                    let idCamara = camaraSeleccionada ? camaraSeleccionada.deviceId : camarasInvertidas[0].deviceId;
 
-                    // Iniciamos el lector amarrado a esa cámara específica
-                    encenderYEscear(idCamaraSeleccionada);
+                    encenderYEscaneat(idCamara);
                 } else {
-                    alert("No se detectaron cámaras en este dispositivo.");
+                    alert("No se detectaron cámaras.");
                 }
             })
             .catch((err) => {
                 console.error("Error al listar cámaras:", err);
-                alert("Error de acceso al hardware de video.");
             });
 
-        function encenderYEscear(deviceId) {
+        function encenderYEscaneat(deviceId) {
             const hints = new Map();
             hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.PDF_417]);
 
-            // Enciende la cámara asignada y se queda procesando las imágenes en vivo
             codeReader.decodeFromVideoDevice(deviceId, videoElement, (result, err) => {
                 if (result && escaneando) {
                     procesarDatosDNI(result.text);
